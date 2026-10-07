@@ -75,3 +75,5 @@ Weather values are only held in memory and replaced on refresh. No weather histo
 
 ## Page visit counter
 The footer counts page loads (including reloads) in this browser, starting when the counter is added. Weather refreshes and forecast selections do not increment it. The count is stored under wxmaps.page-visits.v1 and synchronizes between tabs. Web Locks serialize simultaneous increments where supported. This is a local page-view count, not unique visitors or a shared total across devices. Clearing site data resets it; blocked storage displays an unavailable state. No analytics service or tracking requests are used.
+
+Use **Exclude this browser** in the footer to pause future page-view increments for this browser and origin. The existing count is preserved; **Resume counting this browser** enables future loads again. The preference persists under wxmaps.page-visits.excluded.v1 and synchronizes between tabs. Clearing site data or using another browser/profile resets the preference. This does not filter a shared analytics total; the counter remains browser-local.

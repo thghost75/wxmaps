@@ -33,3 +33,5 @@
 footer{flex-wrap:wrap}.visit-counter{flex-basis:100%;border-top:1px solid var(--border);padding:14px 0 4px;text-align:center}.visit-counter p{margin:0}.visit-counter strong{display:inline-block;margin-left:8px;color:var(--accent);font-size:16px;font-variant-numeric:tabular-nums}.visit-counter>span{display:block;font-size:11px;color:var(--muted);margin-top:3px}
 
 .visit-counter .copyright{margin:12px 0 0;color:var(--muted);font-size:12px}
+
+#visit-count-toggle{margin-top:10px;padding:6px 10px;border:1px solid var(--border);border-radius:5px;background:transparent;color:var(--muted);font:inherit;cursor:pointer}#visit-count-toggle:hover{color:var(--accent);border-color:var(--accent)}#visit-count-toggle:disabled{cursor:default;opacity:.6}#visit-count-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
