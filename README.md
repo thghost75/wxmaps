@@ -1,35 +1,42 @@
 # WxMaps Romania
 
-A static weather explorer for Romania with ECMWF forecasts, location search, five saved locations, and a browser-local visit counter. No framework, dependencies or API key are required for the current non-commercial forecast endpoint.
+A Romania weather explorer with ECMWF forecasts, location search, five saved locations, and a shared visit counter backed by Python and Upstash Redis. The frontend uses plain JavaScript with no third-party browser dependencies.
 
-## Deploy with GitHub Pages
+## Deploy with Vercel
 
-1. Create a GitHub repository named **WxMaps**, with **main** as its default branch. Use a public repository for GitHub Free.
-2. Extract the package and upload the **contents** of its WxMaps folder to the repository root, including the hidden **.github** folder. Do not upload the ZIP itself or nest the whole project in another WxMaps folder. GitHub Desktop or Git preserves dotfiles when committing.
-3. In the repository, open **Settings → Pages → Build and deployment → Source** and choose **GitHub Actions**.
-4. Open **Actions → Validate and deploy WxMaps → Run workflow**, choose **main**, and run it. Future pushes to main deploy automatically after checks pass. Pull requests only run checks.
-5. Open the site URL shown by the deployment, normally **https://YOUR-USERNAME.github.io/WxMaps/**. The URL uses your actual repository name.
+1. Import this repository into Vercel. Select the **Other** framework preset and leave the root at the repository root.
+2. The included vercel.json sets the build command to **npm run build** and the output directory to **dist**. Vercel also deploys **api/visits.py** as a Python function.
+3. In the project's **Storage** tab, create/connect a dedicated Upstash Redis database. Prefer the free plan if available. Connect its environment variables to **Production**.
+4. The backend accepts one of these server-only credential pairs: **KV_REST_API_URL / KV_REST_API_TOKEN**, **UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN**, or **COUNTER_REDIS_REST_URL / COUNTER_REDIS_REST_TOKEN**. The Marketplace integration supplies these; never paste credentials into frontend files, GitHub, screenshots or logs.
+5. Redeploy after connecting storage. Git pushes to main then deploy through the Vercel GitHub connection.
+6. For a different domain, update the production origin in **dist/visit-counter.js** and **wxmaps/visit_counter.py**. For a separate site, also change the Redis key and cookie name.
 
-If the first run fails before Pages is enabled, enable it in step 3 and rerun the workflow. A deployment waiting for environment approval needs approval in GitHub. If using a different branch, change the branch filters and deploy conditions in .github/workflows/pages.yml. No personal access token or repository secret is needed; the workflow uses GitHub's built-in token.
-
-Setup reference: [GitHub Pages publishing source](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site) and [custom workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
+The current production origin is https://wxmaps-iota.vercel.app/. GitHub Actions runs validation only. GitHub Pages cannot host the Python visit endpoint.
 
 ## Local development
 
-Install Node.js 24 or later, open a terminal in this folder, then run:
+Install Node.js 24 or later, then run:
 
 ~~~sh
-npm run check
+npm run build
 npm start
 ~~~
 
-Open http://127.0.0.1:4173. No npm install step is needed. Edit files in dist directly; they are the site source and the deployment output. npm run build validates the ready-to-publish files without generating a separate bundle.
+Open http://127.0.0.1:4173. No npm install is needed. Edit dist files directly; build validates the ready-to-publish frontend. Local and preview origins do not call or increment the production counter.
+
+With Python 3.12 or later, run the backend tests too:
+
+~~~sh
+python -m unittest discover -s tests -p "test_*.py"
+~~~
+
+The counter uses only the Python standard library. Tests use fake credentials and mocked storage, never the live Redis database.
 
 ## What gets deployed
 
-The workflow publishes only **dist/**. The preview server, README and development scripts remain in the repository. All site assets use relative paths to support both project Pages URLs and custom domains. Any other static host can serve the contents of dist as its web root.
+Vercel serves **dist/** and the **api/visits.py** function, with its helper in **wxmaps/**. Upstash holds the durable total across deployments. The local preview server does not serve the Python endpoint.
 
-Saved locations and the visit count belong to each browser and origin; they do not move from localhost to the public site. The visit count is not a shared visitor total. Daily forecast refresh runs in visitors' browsers, with no scheduled GitHub job needed. No weather history is bundled or stored on the hosting server.
+Saved locations and the counter exclusion preference belong to each browser and origin; they do not move from localhost to the public site. Daily forecast refresh runs in visitors' browsers. No weather history is bundled or stored on the hosting server.
 
 ## Features
 - Geographic map with twelve selectable Romanian cities
@@ -45,7 +52,7 @@ The browser requests https://api.open-meteo.com/v1/forecast with model ecmwf_ifs
 Open-Meteo's free endpoint is for non-commercial use and subject to rate limits. Review their current terms before commercial deployment. Forecast attribution: Open-Meteo / ECMWF, CC BY 4.0. Geography: Natural Earth via https://github.com/datasets/geo-countries (public domain/ODC-PDDL).
 
 ## Structure
-`dist/` is a deployable static site. `server.mjs` is a loopback-only preview server. No framework or third-party browser dependency. The supplied GitHub Actions workflow publishes dist to GitHub Pages.
+`dist/` is a deployable static site. `server.mjs` is a loopback-only preview server. No framework or third-party browser dependency. Vercel serves the frontend and Python visit endpoint; GitHub Actions validates changes.
 
 Optional WebMCP forecast selection is feature-detected and does not affect ordinary browsers.
 
@@ -73,7 +80,16 @@ Expired readings and date controls are cleared before the next request. Response
 
 Weather values are only held in memory and replaced on refresh. No weather history or forecast cache is saved to disk or local storage. Saved location preferences are retained.
 
-## Page visit counter
-The footer counts page loads (including reloads) in this browser, starting when the counter is added. Weather refreshes and forecast selections do not increment it. The count is stored under wxmaps.page-visits.v1 and synchronizes between tabs. Web Locks serialize simultaneous increments where supported. This is a local page-view count, not unique visitors or a shared total across devices. Clearing site data resets it; blocked storage displays an unavailable state. No analytics service or tracking requests are used.
+## Site visit counter
 
-Use **Exclude this browser** in the footer to pause future page-view increments for this browser and origin. The existing count is preserved; **Resume counting this browser** enables future loads again. The preference persists under wxmaps.page-visits.excluded.v1 and synchronizes between tabs. Clearing site data or using another browser/profile resets the preference. This does not filter a shared analytics total; the counter remains browser-local.
+The footer displays one persistent total across all visitors. The Python endpoint uses an atomic Redis operation under **wxmaps:public-visits:v1**, separate from other sites. The old per-browser totals are not added to this total; counting starts with the first successful shared visit.
+
+A signed **__Host-wxmaps-visit** cookie counts repeat visits within 30 minutes only once when cookies are enabled. The cookie is Secure, HttpOnly and SameSite=Lax. Common bot, crawler, spider, headless and preview user agents do not increase the total. This counts visits, not unique people; deleting cookies or switching browsers can count again, and user-agent filtering is not comprehensive abuse prevention.
+
+Only requests from the configured production origin with the custom header can increment. GET reads never increment. Local and preview frontends do not call the counter. Failed requests display an unavailable state; neither the client nor backend retries increments because a timeout can happen after Redis has counted the visit.
+
+Use **Exclude this browser** to exclude future page loads on this origin. The existing **wxmaps.page-visits.excluded.v1** preference is preserved. Excluded browsers still see the shared total via a read-only request. **Resume counting this browser** enables future page loads again. Toggling does not retroactively add/remove visits. Clearing site data or changing browser/profile resets the exclusion. If browser storage is blocked, the frontend reads the total without incrementing.
+
+Redis stores only the aggregate total and its start date. The counter does not save IP addresses, user agents or individual visitor records. The host's normal request logs are separate. Credentials stay in server environment variables and are never returned by the endpoint.
+
+Adapted from the user's [Romanian Climate Explorer frontend](https://github.com/thghost75/Romanian-Climate-Explorer/blob/main/frontend/src/VisitCounter.tsx), [Python counter](https://github.com/thghost75/Romanian-Climate-Explorer/blob/main/anm_climate/visit_counter.py), and [API integration](https://github.com/thghost75/Romanian-Climate-Explorer/blob/main/api/index.py). WxMaps retains its existing plain JavaScript frontend rather than adding React for one footer component.

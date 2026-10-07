@@ -1,62 +1,78 @@
-const key = 'wxmaps.page-visits.v1';
+// Adapted from Romanian Climate Explorer's VisitCounter component for this vanilla JS site.
+const liveOrigin = 'https://wxmaps-iota.vercel.app';
+// Preserve the opt-out already saved by the browser-local counter.
 const exclusionKey = 'wxmaps.page-visits.excluded.v1';
 const countElement = document.getElementById('visit-count');
 const noteElement = document.getElementById('visit-count-note');
 const toggleElement = document.getElementById('visit-count-toggle');
+let total = null;
+let failed = false;
 
-function readCount() {
-  const count = Number(localStorage.getItem(key));
-  return Number.isSafeInteger(count) && count >= 0 ? count : 0;
+function preference() {
+  try { return { excluded: localStorage.getItem(exclusionKey) === 'true', available: true }; }
+  catch { return { excluded: true, available: false }; }
 }
-function showCount(count) {
-  countElement.textContent = new Intl.NumberFormat('en-GB').format(count);
-}
-function isExcluded() {
-  return localStorage.getItem(exclusionKey) === 'true';
-}
+
 function renderCounter() {
-  const excluded = isExcluded();
-  showCount(readCount());
-  noteElement.textContent = excluded
-    ? 'This browser is excluded · counting paused'
-    : 'This browser · includes reloads';
+  const { excluded, available } = preference();
+  countElement.textContent = total ? new Intl.NumberFormat('en-GB').format(total.visits) : '—';
+  const notes = [];
+  if (location.origin !== liveOrigin) notes.push('Counter runs on the live site');
+  else if (failed) notes.push('Site visit total temporarily unavailable');
+  else if (!total) notes.push('Loading site visits…');
+  else {
+    if (total.since) notes.push('Since ' + new Date(total.since + 'T00:00:00Z').toLocaleDateString('en-GB', {
+      day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
+    }));
+    notes.push('Repeat visits within 30 minutes count once');
+  }
+  if (!available) notes.push('Browser storage blocked; your visits are excluded');
+  else if (excluded) notes.push('Your browser is excluded');
+  noteElement.textContent = notes.join(' · ');
   toggleElement.textContent = excluded ? 'Resume counting this browser' : 'Exclude this browser';
-  toggleElement.disabled = false;
+  toggleElement.disabled = !available;
 }
-function unavailable() {
-  countElement.textContent = '—';
-  noteElement.textContent = 'Visit count unavailable · browser storage is blocked';
-  toggleElement.disabled = true;
-}
-function recordVisit() {
+
+async function loadTotal() {
+  if (location.origin !== liveOrigin) return;
   try {
-    if (!isExcluded()) {
-      const count = Math.min(readCount() + 1, Number.MAX_SAFE_INTEGER);
-      localStorage.setItem(key, String(count));
+    // Excluded browsers can still read the shared total without increasing it.
+    const response = await fetch('/api/visits', {
+      method: preference().excluded ? 'GET' : 'POST',
+      headers: { 'X-WxMaps-Visit': '1' },
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!response.ok) throw new Error('Counter unavailable');
+    const result = await response.json();
+    if (!Number.isSafeInteger(result.visits) || result.visits < 0
+        || !(result.since === null || (typeof result.since === 'string'
+          && /^\d{4}-\d{2}-\d{2}$/.test(result.since) && Number.isFinite(Date.parse(result.since))))) {
+      throw new Error('Invalid counter response');
     }
-    renderCounter();
-  } catch { unavailable(); }
+    total = result;
+  } catch { failed = true; }
+  // Never retry a POST: a timeout may occur after the visit was counted.
+  renderCounter();
 }
-// Serialize increments across tabs when Web Locks is available.
-function withCounterLock(action) {
-  if (navigator.locks?.request) return navigator.locks.request(key, action);
-  return Promise.resolve().then(action);
-}
-withCounterLock(recordVisit).catch(unavailable);
+
+renderCounter();
+// Serialize page-load requests so other tabs receive the first tab's cookie.
+const request = navigator.locks?.request
+  ? navigator.locks.request('wxmaps.site-visits', loadTotal)
+  : loadTotal();
+request.catch(() => { failed = true; renderCounter(); });
+
 toggleElement.addEventListener('click', () => {
-  toggleElement.disabled = true;
-  withCounterLock(() => {
-    try {
-      localStorage.setItem(exclusionKey, String(!isExcluded()));
-      renderCounter();
-    } catch {
-      // Keep the actual saved state visible if a preference write fails.
-      try { renderCounter(); } catch { unavailable(); }
-      noteElement.textContent = 'Could not change counting preference. Check browser storage settings.';
-    }
-  }).catch(unavailable);
+  try {
+    localStorage.setItem(exclusionKey, String(!preference().excluded));
+    renderCounter();
+  } catch {
+    renderCounter();
+    noteElement.textContent = 'Could not save counting preference. Check browser storage settings.';
+  }
 });
 window.addEventListener('storage', event => {
-  if (event.key !== key && event.key !== exclusionKey && event.key !== null) return;
-  try { renderCounter(); } catch { unavailable(); }
+  if (event.key === exclusionKey || event.key === null) renderCounter();
 });

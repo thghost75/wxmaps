@@ -8,3 +8,7 @@ Thumbs.db
 work/
 outputs/
 *.zip
+__pycache__/
+*.pyc
+.venv/
+.vercel/

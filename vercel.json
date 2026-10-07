@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/visits.py": {
+      "maxDuration": 10,
+      "excludeFiles": "{dist/**,tests/**,scripts/**,.github/**}"
+    }
+  }
+}

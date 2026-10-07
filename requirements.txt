@@ -1,0 +1,1 @@
+# The visit counter uses only the Python standard library.
