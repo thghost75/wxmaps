@@ -11,10 +11,14 @@ const svg = (tag, attrs, text) => {
   return el;
 };
 
-export function createHourlyPanel() {
+export function createHourlyPanel({store} = {}) {
   let place, date, hours = [], selectedHour = 0, field = 'temperature_2m', selectionKey = '';
   let source = 'ecmwf', hourlyFields = sourceFields(source);
-  const loader = createHourlyLoader({onChange: render});
+  const loader = store ? {
+    get state() { return place ? store.peek(place, source) : {data:null, status:'idle'}; },
+    select(nextPlace, {source: nextSource = source, force = false} = {}) { return store.load(nextPlace,nextSource,{force}); }
+  } : createHourlyLoader({onChange: render});
+  store?.subscribe(render);
   function configureSource() {
     hourlyFields = sourceFields(source);
     if (!hourlyFields[field]) field = 'temperature_2m';
@@ -26,7 +30,7 @@ export function createHourlyPanel() {
       const th = node('th', label); th.scope = 'col'; return th;
     }));
     $('hourly-source-note').textContent = source === 'aethra'
-      ? 'Aethra forecast · Up to seven days ahead from the current hour. Wind is shown in km/h. Pressure is surface pressure, not sea-level pressure. Snowfall is not supplied. The daily map above continues to use ECMWF.'
+      ? 'Aethra forecast · Up to seven days ahead from the current hour. Wind is shown in km/h. Snowfall and pressure are not supplied. The daily map above continues to use ECMWF.'
       : 'ECMWF IFS 0.25° via Open-Meteo · Hourly values are interpolated from coarser model steps, not observations. Precipitation and new snowfall are totals for the preceding hour; snow is not ground depth. Pressure is adjusted to sea level.';
   }
   configureSource();

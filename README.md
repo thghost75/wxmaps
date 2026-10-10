@@ -47,7 +47,7 @@ Saved locations and the counter exclusion preference belong to each browser and 
 - Responsive layout and keyboard-accessible controls
 
 ## Data
-The browser requests https://api.open-meteo.com/v1/forecast with model ecmwf_ifs025. Daily dates use Europe/Bucharest. Retrieval time is not model initialization time. Markers represent city point forecasts; country shading is geographic, not interpolated weather. Forecasts are deterministic, not probabilities. No fabricated or stored sample forecast is shown. Internet is required for forecasts; the geographic map is bundled.
+The browser requests https://api.open-meteo.com/v1/forecast with model ecmwf_ifs025. Daily dates use Europe/Bucharest. Retrieval time is not model initialization time. Markers represent city point forecasts; country shading is geographic, not interpolated weather. The ECMWF forecast is deterministic; Aethra also supplies a precipitation-probability field. No fabricated or stored sample forecast is shown. Internet is required for forecasts; the geographic map is bundled.
 
 Open-Meteo's free endpoint is for non-commercial use and subject to rate limits. Review their current terms before commercial deployment. Forecast attribution: Open-Meteo / ECMWF, CC BY 4.0. Geography: Natural Earth via https://github.com/datasets/geo-countries (public domain/ODC-PDDL).
 
@@ -64,7 +64,7 @@ The map uses a local Mercator view centred at 25° E, 46° N with a uniform scal
 ## Romania location search
 Search Romanian populated places using Open-Meteo geocoding (GeoNames), restricted by countryCode=RO. Submit at least two characters. Up to 20 matches are returned per query, with county and municipality to distinguish repeated names. Search supports names without diacritics and county qualifiers. Coverage follows the provider catalogue; there is no fixed application-wide locality limit and no claim that every locality is indexed.
 
-Twelve overview cities plus one replaceable searched location are kept in memory. Forecast requests include at most thirteen places. Search results are not all rendered on the map. Selecting a new place clears its previous forecast immediately, cancels older requests, and loads fresh data. Search results and the active selection are not persisted across reloads. Saved quick-access locations are stored locally as described below. The search query is sent to Open-Meteo; selected coordinates are sent to its forecast API.
+Twelve overview cities plus one replaceable searched location are kept in memory. Daily map requests include at most thirteen places; the saved-place dashboard can load up to five additional hourly point forecasts. Search results are not all rendered on the map. Selecting a new place clears its previous forecast immediately, cancels older requests, and loads fresh data. Search results and the active selection are not persisted across reloads. Saved quick-access locations are stored locally as described below. The search query is sent to Open-Meteo; selected coordinates are sent to its forecast API.
 
 Verification: live search and forecast for Sinaia; duplicate Victoria names with county labels; keyboard result selection; empty-result handling; dynamic selected pin; seven-day snow/temperature controls.
 
@@ -115,3 +115,21 @@ The server accepts only coordinates within the Romania bounding box, rounded to 
 Shared Redis entries under wxmaps:aethra:v1 expire after three hours. Errors expire after two minutes. An atomic cache lookup, lock and budget reservation limits upstream calls to 20 per minute and 250 per UTC day across all visitors (at most 7,750 over 31 days). Failed requests also consume the budget; no upstream retries are made. This reserves headroom below the advertised 10,000 monthly allowance for this dedicated key; other account usage still counts toward the provider quota. Requests fail closed when storage is unavailable. No visitor identifiers are stored by this feature.
 
 Switching source or location clears previous readings and ignores late responses. Browser freshness respects the server cache expiry, so a cached response cannot extend its lifetime. Errors explicitly offer ECMWF rather than quietly mixing models. Use the existing JavaScript and Python test commands to verify the integration. Documentation: https://docs.aethra.dev/api/.
+
+## Forecast tools
+
+A new section below the hourly chart follows the selected place and date:
+
+- Daily briefing with temperature range, precipitation sum over available hourly readings, wet hours and peak wind.
+- Unofficial threshold indicators: freezing air at or below 0°C; heat at or above 32°C; Aethra gusts at or above 60 km/h (ECMWF wind at or above 40 km/h); at least 20 mm precipitation in six complete consecutive hourly readings.
+- ECMWF/Aethra comparisons for temperature, precipitation and wind, using only matching timestamps with readings in both forecasts. The actual forecast points are labelled.
+- Rain planner with 1-, 3- and 6-hour complete future windows ranked by precipitation total. Missing values are never treated as dry hours; recommendations do not overlap.
+- Aethra mountain outlook showing temperature, feels-like temperature, gusts and freezing level above sea level. This is a forecast for the selected point, not a summit forecast; freezing level is not snowline.
+- Weather dashboard for up to five saved locations, including searched places.
+- Five extra Aethra hourly map layers: gusts, precipitation chance, humidity, clouds and freezing level. These are city point markers, not interpolated rasters. Daily ECMWF layers remain available.
+
+Tools display available-hour coverage, including 23/25-hour daylight-saving days. Aethra coverage can be shorter than ECMWF; missing days show an explicit empty state. No downloadable forecast cards are included.
+
+Hourly requests are shared between panels and map markers, with at most two concurrent requests and 40 completed cache entries in browser memory. Data expires after three hours, at the Bucharest date change, or at the server's expiry, whichever comes first. Errors cool down for five minutes unless explicitly refreshed. Existing server-side Aethra cache and quota limits still apply. Extra map data is requested only when an extra layer is selected; saved-place weather is requested only when its dashboard is opened. Credentials stay server-side.
+
+The loopback-only local preview serves the frontend and ECMWF data; Aethra requires the deployed Python endpoint with server credentials. Live Aethra features can be tested on the production site. Tests cover timestamp matching, null handling, daylight-saving coverage, complete rain intervals, thresholds, deduplication, concurrency, and cache expiry.

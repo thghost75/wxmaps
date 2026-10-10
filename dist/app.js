@@ -1,11 +1,48 @@
+import {createForecastStore} from './forecast-store.js';
+import {createForecastTools} from './forecast-tools.js';
+import {mapSnapshot} from './forecast-tools-data.js';
+import {bucharestDate} from './forecast-freshness.js';
 import {createHourlyPanel} from './hourly.js';
 import {STORAGE_KEY, MAX_LOCATIONS, locationKey, readLocations, addLocation, writeLocations} from './saved-locations.js';
 import {currentForecastDates, isFreshForecast} from './forecast-freshness.js';
 const cities=[{name:'București',lat:44.4268,lon:26.1025},{name:'Cluj-Napoca',lat:46.7712,lon:23.6236},{name:'Timișoara',lat:45.7489,lon:21.2087},{name:'Iași',lat:47.1585,lon:27.6014},{name:'Constanța',lat:44.1598,lon:28.6348},{name:'Brașov',lat:45.6579,lon:25.6012},{name:'Craiova',lat:44.3302,lon:23.7949},{name:'Oradea',lat:47.0465,lon:21.9189},{name:'Sibiu',lat:45.7983,lon:24.1256},{name:'Suceava',lat:47.6635,lon:26.2732},{name:'Baia Mare',lat:47.6567,lon:23.5849},{name:'Galați',lat:45.4353,lon:28.008}];
 const layers={temperature:{field:'temperature_2m_max',title:'Daily maximum temperature',unit:'°C',min:-10,max:35,colors:['#64a7ed','#7cf2c2','#f7c274','#ef8c87']},precipitation:{field:'precipitation_sum',title:'Daily precipitation total',unit:'mm',min:0,max:30,colors:['#a4cfce','#66c5e7','#6f94ef','#b391f1']},snow:{field:'snowfall_sum',title:'Daily new snowfall · estimated',unit:'cm',min:0,max:20,colors:['#b6dce4','#8cc7f1','#9fa0f0','#d69af1']},wind:{field:'wind_speed_10m_max',title:'Daily maximum wind · 10 m',unit:'km/h',min:0,max:60,colors:['#a1d7bd','#7ccebd','#e4c075','#ef8c87']}};
+Object.assign(layers,{
+  gusts:{field:'wind_gusts',title:'Hourly wind gusts',unit:'km/h',min:0,max:80,colors:['#a1d7bd','#e4c075','#ef8c87','#c0acf4'],hourly:true},
+  rainChance:{field:'precipitation_probability',title:'Hourly precipitation chance',unit:'%',min:0,max:100,colors:['#a4cfce','#66c5e7','#6f94ef','#b391f1'],hourly:true},
+  humidity:{field:'relative_humidity_2m',title:'Hourly humidity',unit:'%',min:0,max:100,colors:['#e4c075','#a4cfce','#66c5e7','#6f94ef'],hourly:true},
+  clouds:{field:'cloud_cover',title:'Hourly cloud cover',unit:'%',min:0,max:100,colors:['#7cf2c2','#a4cfce','#8ba6c2','#687591'],hourly:true},
+  freezing:{field:'freezing_level',title:'Freezing level above sea level',unit:'m',min:0,max:5000,colors:['#c0acf4','#64a7ed','#7cf2c2','#f7c274'],hourly:true}
+});
 const $=id=>document.getElementById(id);
 const overviewCount=cities.length;
-const hourlyPanel=createHourlyPanel();
+const forecastStore=createForecastStore();
+const hourlyPanel=createHourlyPanel({store:forecastStore});
+const forecastTools=createForecastTools({store:forecastStore,onSelect:p=>selectPlace({id:p.id,name:p.name,latitude:p.lat,longitude:p.lon,admin1:p.county})});
+let mapHour=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Europe/Bucharest',hour:'2-digit',hourCycle:'h23'}).format(new Date()));
+$('map-hour').value=String(mapHour);
+function mapValue(index) {
+  const meta=layers[layer];
+  return meta.hourly ? mapSnapshot(forecastStore.peek(cities[index],'aethra').data,dates[day]||bucharestDate(),mapHour,meta.field) : value(index,meta.field);
+}
+function updateMapLayer() {
+  const meta=layers[layer];
+  $('extra-layer').value=meta.hourly?layer:'';
+  $('map-hour-control').hidden=!meta.hourly;
+  $('map-model').textContent=meta.hourly?'AETHRA · HOURLY':'ECMWF IFS · 0.25°';
+  const label=String(mapHour).padStart(2,'0')+':00 Bucharest time';
+  $('primary-source').textContent=meta.hourly?'Aethra · '+label+' · daily metrics below: ECMWF':'ECMWF daily forecast';
+  $('primary-value').textContent=number(mapValue(selected),['precipitation','snow'].includes(layer)?1:0);
+  if (meta.hourly) {
+    cities.forEach(p=>forecastStore.load(p,'aethra'));
+    const ready=cities.filter((_,i)=>Number.isFinite(mapValue(i))).length;
+    const loading=cities.some(p=>forecastStore.peek(p,'aethra').status==='loading');
+    $('map-layer-status').textContent=label+' · '+ready+'/'+cities.length+' locations'+(loading?' · loading…':ready?' · nearest forecast points':' · no coverage; try an earlier day/time or a daily layer')+(layer==='freezing'?' · not the snowline':'');
+  } else $('map-layer-status').textContent='Daily layers use ECMWF. Extra hourly layers use Aethra.';
+}
+forecastStore.subscribe(()=>{if(layers[layer].hourly){updateMapLayer();renderMarkers();}});
+function updateTools(){forecastTools.update(cities[selected],dates[day]||bucharestDate(),savedLocations);}
+
 let selected=0,day=0,layer='temperature',forecasts=null,dates=[],loadedAt=null,busy=false;
 let forecastController=null,forecastVersion=0,searchController=null,searchVersion=0;
 let lastAttemptAt=0;
@@ -28,11 +65,11 @@ function placeCountryLabels(){
   group.replaceChildren(...labels.map(([name,lon,lat])=>{const [x,y]=project(lon,lat);const label=svg('text',{x,y,'text-anchor':'middle',class:name==='BLACK SEA'?'sea-label':''});label.textContent=name;return label}));
 }
 function svg(tag,attrs){const el=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [k,v] of Object.entries(attrs))el.setAttribute(k,v);return el}
-async function map(){try{const res=await fetch('./region.json');if(!res.ok)throw Error();const data=await res.json();for(const f of data.features){const polys=f.geometry.type==='Polygon'?[f.geometry.coordinates]:f.geometry.coordinates;const d=polys.map(poly=>poly.map(ring=>ring.map(([lon,lat],i)=>(i?'L':'M')+project(lon,lat).map(n=>n.toFixed(2)).join(',')).join(' ')+'Z').join(' ')).join(' ');$('countries').append(svg('path',{d,class:'country'+(f.properties.name==='Romania'?' romania':''),'fill-rule':'evenodd'}))}}catch{$('map-error').hidden=false}renderMarkers();hourlyPanel.update(cities[selected],dates[day])}
-function renderMarkers(){const fragment=document.createDocumentFragment();cities.forEach((c,i)=>{const [x,y]=project(c.lon,c.lat);const n=value(i,layers[layer].field);const g=svg('g',{transform:'translate('+x+','+y+')',class:'marker'+(i===selected?' selected':''),role:'button',tabindex:'0','aria-label':c.name+', '+layers[layer].title+': '+number(n,layer==='snow'?1:0)+' '+layers[layer].unit,'aria-pressed':String(i===selected)});g.append(svg('circle',{r:20,fill:'transparent',stroke:'none'}));g.append(svg('circle',{r:i===selected?9:7,fill:color(n)}));const label=svg('text',{x:c.lon>27.8?-13:13,y:3,'text-anchor':c.lon>27.8?'end':'start'});label.textContent=c.name;const reading=svg('text',{x:c.lon>27.8?-13:13,y:22,class:'marker-value','text-anchor':c.lon>27.8?'end':'start'});reading.textContent=number(n,layer==='snow'?1:0)+(Number.isFinite(n)?(layer==='temperature'?'°':' '+layers[layer].unit):'');const activePoint=project(cities[selected].lon,cities[selected].lat);if(i===selected||Math.hypot(x-activePoint[0],y-activePoint[1])>65)g.append(label,reading);g.addEventListener('click',()=>chooseCity(i));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();chooseCity(i);$('markers').children[i]?.focus()}});fragment.append(g)});$('markers').replaceChildren(fragment)}
+async function map(){try{const res=await fetch('./region.json');if(!res.ok)throw Error();const data=await res.json();for(const f of data.features){const polys=f.geometry.type==='Polygon'?[f.geometry.coordinates]:f.geometry.coordinates;const d=polys.map(poly=>poly.map(ring=>ring.map(([lon,lat],i)=>(i?'L':'M')+project(lon,lat).map(n=>n.toFixed(2)).join(',')).join(' ')+'Z').join(' ')).join(' ');$('countries').append(svg('path',{d,class:'country'+(f.properties.name==='Romania'?' romania':''),'fill-rule':'evenodd'}))}}catch{$('map-error').hidden=false}updateMapLayer();renderMarkers();hourlyPanel.update(cities[selected],dates[day]);updateTools()}
+function renderMarkers(){const fragment=document.createDocumentFragment();cities.forEach((c,i)=>{const [x,y]=project(c.lon,c.lat);const n=mapValue(i);const g=svg('g',{transform:'translate('+x+','+y+')',class:'marker'+(i===selected?' selected':''),role:'button',tabindex:'0','aria-label':c.name+', '+layers[layer].title+': '+number(n,layer==='snow'?1:0)+' '+layers[layer].unit,'aria-pressed':String(i===selected)});g.append(svg('circle',{r:20,fill:'transparent',stroke:'none'}));g.append(svg('circle',{r:i===selected?9:7,fill:color(n)}));const label=svg('text',{x:c.lon>27.8?-13:13,y:3,'text-anchor':c.lon>27.8?'end':'start'});label.textContent=c.name;const reading=svg('text',{x:c.lon>27.8?-13:13,y:22,class:'marker-value','text-anchor':c.lon>27.8?'end':'start'});reading.textContent=number(n,layer==='snow'?1:0)+(Number.isFinite(n)?(layer==='temperature'?'°':' '+layers[layer].unit):'');const activePoint=project(cities[selected].lon,cities[selected].lat);if(i===selected||Math.hypot(x-activePoint[0],y-activePoint[1])>65)g.append(label,reading);g.addEventListener('click',()=>chooseCity(i));g.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();chooseCity(i);$('markers').children[i]?.focus()}});fragment.append(g)});$('markers').replaceChildren(fragment)}
 function chooseCity(i){selected=i;render()}
-function render(){expireForecast();renderSavedLocations();const c=cities[selected],l=layers[layer];$('city-select').value=String(selected);$('city-name').textContent=c.name;$('coordinates').textContent=(c.county?c.county+' · ':'')+c.lat.toFixed(2)+'° N · '+c.lon.toFixed(2)+'° E';$('map-title').textContent=l.title;$('map-date').textContent=dates[day]?fmtDate(dates[day],{weekday:'long',day:'numeric',month:'long'}):'Forecast unavailable';$('selected-date').textContent=$('map-date').textContent;$('primary-value').textContent=number(value(selected,l.field),['precipitation','snow'].includes(layer)?1:0);$('primary-unit').textContent=l.unit;$('primary-label').textContent=l.title;$('temp-range').textContent=number(value(selected,'temperature_2m_min'))+'° / '+number(value(selected,'temperature_2m_max'))+'°C';$('snow-value').textContent=number(value(selected,'snowfall_sum'),1)+' cm';$('snow-note').hidden=layer!=='snow';$('rain-value').textContent=number(value(selected,'precipitation_sum'),1)+' mm';$('wind-value').textContent=number(value(selected,'wind_speed_10m_max'))+' km/h';$('meteogram').href='https://charts.ecmwf.int/products/opencharts_meteogram?'+new URLSearchParams({epsgram:'classical_10d',lat:c.lat,lon:c.lon,station_name:c.name});$('legend-low').textContent=l.min+' '+l.unit;$('legend-high').textContent=l.max+' '+l.unit;$('legend-ramp').style.background='linear-gradient(90deg,'+l.colors.join(',')+')';document.querySelectorAll('[data-layer]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.layer===layer)));if(dates.length){$('days').replaceChildren(...dates.map((date,i)=>{const b=document.createElement('button');b.type='button';b.setAttribute('aria-pressed',String(day===i));b.setAttribute('aria-label',fmtDate(date,{weekday:'long',day:'numeric',month:'long'}));const w=document.createElement('span');w.textContent=fmtDate(date,{weekday:'short'});const d=document.createElement('strong');d.textContent=fmtDate(date,{day:'numeric',month:'short'});b.append(w,d);b.onclick=()=>{day=i;render();$('days').children[i]?.focus()};return b}))}else{$('days').textContent='Forecast dates will appear when data is available.'}renderMarkers();hourlyPanel.update(cities[selected],dates[day])}
-function validForecast(f){return f?.timezone==='Europe/Bucharest'&&currentForecastDates(f.daily?.time)&&f.daily_units?.snowfall_sum==='cm'&&Object.values(layers).every(l=>Array.isArray(f.daily[l.field])&&f.daily[l.field].length===7)&&Array.isArray(f.daily.temperature_2m_min)&&f.daily.temperature_2m_min.length===7}
+function render(){expireForecast();renderSavedLocations();const c=cities[selected],l=layers[layer];$('city-select').value=String(selected);$('city-name').textContent=c.name;$('coordinates').textContent=(c.county?c.county+' · ':'')+c.lat.toFixed(2)+'° N · '+c.lon.toFixed(2)+'° E';$('map-title').textContent=l.title;$('map-date').textContent=dates[day]?fmtDate(dates[day],{weekday:'long',day:'numeric',month:'long'}):'Forecast unavailable';$('selected-date').textContent=$('map-date').textContent;$('primary-value').textContent=number(value(selected,l.field),['precipitation','snow'].includes(layer)?1:0);$('primary-unit').textContent=l.unit;$('primary-label').textContent=l.title;$('temp-range').textContent=number(value(selected,'temperature_2m_min'))+'° / '+number(value(selected,'temperature_2m_max'))+'°C';$('snow-value').textContent=number(value(selected,'snowfall_sum'),1)+' cm';$('snow-note').hidden=layer!=='snow';$('rain-value').textContent=number(value(selected,'precipitation_sum'),1)+' mm';$('wind-value').textContent=number(value(selected,'wind_speed_10m_max'))+' km/h';$('meteogram').href='https://charts.ecmwf.int/products/opencharts_meteogram?'+new URLSearchParams({epsgram:'classical_10d',lat:c.lat,lon:c.lon,station_name:c.name});$('legend-low').textContent=l.min+' '+l.unit;$('legend-high').textContent=l.max+' '+l.unit;$('legend-ramp').style.background='linear-gradient(90deg,'+l.colors.join(',')+')';document.querySelectorAll('[data-layer]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.layer===layer)));if(dates.length){$('days').replaceChildren(...dates.map((date,i)=>{const b=document.createElement('button');b.type='button';b.setAttribute('aria-pressed',String(day===i));b.setAttribute('aria-label',fmtDate(date,{weekday:'long',day:'numeric',month:'long'}));const w=document.createElement('span');w.textContent=fmtDate(date,{weekday:'short'});const d=document.createElement('strong');d.textContent=fmtDate(date,{day:'numeric',month:'short'});b.append(w,d);b.onclick=()=>{day=i;render();$('days').children[i]?.focus()};return b}))}else{$('days').textContent='Forecast dates will appear when data is available.'}updateMapLayer();renderMarkers();hourlyPanel.update(cities[selected],dates[day]);updateTools()}
+function validForecast(f){return f?.timezone==='Europe/Bucharest'&&currentForecastDates(f.daily?.time)&&f.daily_units?.snowfall_sum==='cm'&&Object.values(layers).filter(l=>!l.hourly).every(l=>Array.isArray(f.daily[l.field])&&f.daily[l.field].length===7)&&Array.isArray(f.daily.temperature_2m_min)&&f.daily.temperature_2m_min.length===7}
 function clearForecast(){forecasts=null;dates=[];loadedAt=null;day=0}
 function expireForecast(){
   if(!forecasts||isFreshForecast(loadedAt,dates))return false;
@@ -45,6 +82,7 @@ function checkFreshness(){
   const expired=expireForecast();
   if(expired)render();
   hourlyPanel.check();
+  if(document.visibilityState!=='hidden'){forecastTools.check();updateMapLayer();renderMarkers();}
   if(document.visibilityState==='hidden'||busy||isFreshForecast(loadedAt,dates))return;
   const elapsed=Date.now()-lastAttemptAt;
   if(expired||!lastAttemptAt||elapsed>=retryDelay||elapsed<0)load();
@@ -205,7 +243,7 @@ function persistSavedLocations(next,message){
   try{
     writeLocations(localStorage,next);
     savedLocations=next;
-    renderSavedLocations();
+    renderSavedLocations();updateTools();
     $('saved-status').textContent=message;
     return true;
   }catch{
@@ -223,7 +261,7 @@ window.addEventListener('storage',event=>{
   if(event.key!==STORAGE_KEY&&event.key!==null)return;
   try{
     const saved=readLocations(localStorage);savedLocations=saved.locations;
-    renderSavedLocations();$('saved-status').textContent=saved.error;
+    renderSavedLocations();updateTools();$('saved-status').textContent=saved.error;
   }catch{$('saved-status').textContent='Saved locations could not be refreshed.';}
 });
 
@@ -237,10 +275,12 @@ $('search-results').addEventListener('keydown',event=>{
   else if(['ArrowDown','ArrowUp'].includes(event.key)&&i>=0){event.preventDefault();buttons[(i+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length].focus()}
 });
 cities.forEach((c,i)=>{const o=document.createElement('option');o.value=i;o.textContent=c.name;$('city-select').append(o)});
+$('extra-layer').onchange=e=>{if(e.target.value){layer=e.target.value;render();}};
+$('map-hour').onchange=e=>{mapHour=Number(e.target.value);render();};
 $('city-select').onchange=e=>chooseCity(Number(e.target.value));document.querySelectorAll('[data-layer]').forEach(b=>b.onclick=()=>{layer=b.dataset.layer;render()});$('refresh').onclick=()=>{hourlyPanel.refresh();load()};render();placeCountryLabels();map();load();
 setInterval(checkFreshness,60000);
 document.addEventListener('visibilitychange',checkFreshness);
 window.addEventListener('focus',checkFreshness);
 window.addEventListener('pageshow',checkFreshness);
 window.addEventListener('online',()=>{lastAttemptAt=0;checkFreshness()});
-if(document.modelContext?.registerTool){try{Promise.resolve(document.modelContext.registerTool({name:'select_forecast',description:'Select a Romanian city, weather variable and forecast day in WxMaps.',inputSchema:{type:'object',properties:{city:{type:'string',description:'Name of an overview city or the currently selected search result'},variable:{type:'string',enum:Object.keys(layers)},day:{type:'integer',minimum:0,maximum:6}},required:['city','variable','day'],additionalProperties:false},annotations:{readOnlyHint:false},execute(input){const i=cities.findIndex(c=>c.name===input?.city);if(i<0||!Object.hasOwn(layers,input.variable)||!Number.isInteger(input.day)||input.day<0||input.day>6)throw Error('Invalid forecast selection');if(!isFreshForecast(loadedAt,dates)||!validForecast(forecasts?.[i]))throw Error('Forecast is not available');selected=i;layer=input.variable;day=input.day;render();return {city:cities[i].name,date:dates[day],variable:layer,value:value(i,layers[layer].field),unit:layers[layer].unit}}})).catch(()=>{})}catch{}}
+if(document.modelContext?.registerTool){try{Promise.resolve(document.modelContext.registerTool({name:'select_forecast',description:'Select a Romanian city, weather variable and forecast day in WxMaps.',inputSchema:{type:'object',properties:{city:{type:'string',description:'Name of an overview city or the currently selected search result'},variable:{type:'string',enum:Object.keys(layers).filter(key=>!layers[key].hourly)},day:{type:'integer',minimum:0,maximum:6}},required:['city','variable','day'],additionalProperties:false},annotations:{readOnlyHint:false},execute(input){const i=cities.findIndex(c=>c.name===input?.city);if(i<0||!Object.hasOwn(layers,input.variable)||layers[input.variable].hourly||!Number.isInteger(input.day)||input.day<0||input.day>6)throw Error('Invalid forecast selection');if(!isFreshForecast(loadedAt,dates)||!validForecast(forecasts?.[i]))throw Error('Forecast is not available');selected=i;layer=input.variable;day=input.day;render();return {city:cities[i].name,date:dates[day],variable:layer,value:value(i,layers[layer].field),unit:layers[layer].unit}}})).catch(()=>{})}catch{}}

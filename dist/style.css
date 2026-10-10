@@ -45,3 +45,44 @@ footer{flex-wrap:wrap}.visit-counter{flex-basis:100%;border-top:1px solid var(--
 .hourly-details{margin-top:20px;border-top:1px solid var(--border);padding-top:16px}.hourly-details summary{cursor:pointer;color:var(--accent);font-size:14px;padding:7px 0}.hourly-table-scroll{overflow-x:auto;margin-top:12px}.hourly-details table{width:100%;border-collapse:collapse;text-align:right;white-space:nowrap;font-size:13px;font-variant-numeric:tabular-nums}.hourly-details caption{text-align:left;color:var(--muted);padding:10px 0 16px}.hourly-details th,.hourly-details td{padding:10px 12px;border-bottom:1px solid var(--border)}.hourly-details thead{color:var(--muted)}.hourly-details th:first-child{text-align:left}.hourly-details tbody th{font-weight:400}.hourly-details button{border:0;background:transparent;color:var(--text);padding:5px 0;min-height:32px}.hourly-details .active-hour{background:#1e3c3a}.hourly-details button[aria-pressed=true]{color:var(--accent)}
 .hourly-source{font-size:12px;margin:20px 0 0;max-width:1000px}.hourly-panel input:focus-visible,.hourly-panel summary:focus-visible,.hourly-panel [tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
 @media(max-width:720px){.hourly-panel{padding:18px 16px}.hourly-heading{flex-direction:column;gap:18px}.hourly-heading h2{font-size:22px}.hourly-variable-control{width:100%;min-width:0}.hourly-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.hourly-card{padding:12px}.hourly-card dd{font-size:17px}#hourly-reading{font-size:26px}.hourly-subtitle{font-size:12px}.hourly-chart-scroll{margin-right:-4px}}
+
+/* Forecast planning tools */
+.tools-panel{margin-top:26px;padding:28px;background:#101d2b;border:1px solid #263a4d;border-radius:16px}
+.tools-heading,.tools-controls{display:flex;align-items:center;gap:22px;justify-content:space-between;flex-wrap:wrap}
+.tools-heading h2{font-size:28px;margin:8px 0}.tools-map-link{font-size:12px;color:#9db5c9}
+.tools-nav{display:flex;gap:8px;flex-wrap:wrap;margin:25px 0;padding-bottom:22px;border-bottom:1px solid #293e50}
+.tools-nav button{padding:12px 17px;border:1px solid #30475b;background:#132335;color:#b9cbda;border-radius:8px;font:inherit;font-size:13px;cursor:pointer}
+.tools-nav button[aria-pressed=true]{background:#7cf2c2;color:#102b24;border-color:#7cf2c2;font-weight:700}
+.tools-controls{justify-content:flex-start;margin-bottom:22px}.tools-controls>div{flex:1;min-width:210px}
+.tools-controls h3{font-size:20px;margin:0 0 8px}.tools-controls p{font-size:12px;color:#9aafc2;margin:0}
+.tools-controls label,.extra-map-controls label{font-size:10px;letter-spacing:1.2px;color:#9aafc2;display:flex;flex-direction:column;gap:7px}
+.tools-controls select,.extra-map-controls select{font:inherit;letter-spacing:normal;font-size:13px;background:#0c1825;border:1px solid #34495d;color:#e4edf5;border-radius:7px;padding:10px 12px;min-width:150px}
+.tools-controls [hidden],.extra-map-controls [hidden]{display:none}
+.tool-summary{padding:24px;border:1px solid #355d53;border-radius:12px;background:linear-gradient(115deg,#17372f,#122532)}
+.tool-summary h4{font-size:23px;font-weight:500;margin:14px 0}.tool-summary p{line-height:1.6}.tool-summary small{color:#a7bcbb}
+.tool-stat-grid,.tool-risk-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0}
+.tool-stat{padding:20px;border:1px solid #2c4255;border-radius:10px;background:#112131;min-width:0}
+.tool-stat span,.tool-stat small{display:block;color:#9cb2c6;font-size:12px;line-height:1.5}
+.tool-stat strong{display:block;font-size:24px;font-weight:500;margin:12px 0;overflow-wrap:anywhere}
+.tool-subhead{font-size:16px;margin:28px 0 14px}.tool-risk{padding:17px;border-radius:9px;background:#0d1a27;border:1px solid #2a4053}
+.tool-risk.flagged{border-color:#c99353;background:#30251e}.tool-risk strong{display:block;font-size:15px;margin:14px 0 4px}
+.tool-risk .risk-label{font-size:9px;letter-spacing:1.2px;color:#9cb2c6}.tool-risk.flagged .risk-label{color:#f0c478}
+.tool-risk p{margin:8px 0}.tool-risk small{color:#9cb2c6;font-size:11px;line-height:1.5}
+.tool-footnote,.tool-empty{color:#9aafc2;font-size:12px;line-height:1.7}.tool-empty{padding:28px 0;font-size:14px}
+#tools-content>svg{display:block;width:100%;height:auto;max-height:320px;margin:12px 0 20px}
+.compare-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+.tool-chart-legend{display:flex;gap:24px;font-size:12px}.ecmwf-key{color:#7cf2c2}.aethra-key{color:#c0acf4}
+.tool-window-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.rain-strip{display:flex;overflow-x:auto;gap:6px;margin:24px 0;padding-bottom:12px}
+.rain-hour{min-width:85px;position:relative;isolation:isolate;padding:14px 9px;border:1px solid #294054;border-radius:7px;text-align:center;background:#0d1a27}
+.rain-hour:before{content:"";position:absolute;z-index:-1;bottom:0;left:0;right:0;height:var(--rain);background:#1b4d68}
+.rain-hour span,.rain-hour strong,.rain-hour small{display:block;margin:5px 0;font-size:12px}.rain-hour small{font-size:10px;color:#b4c8d8}
+.tool-saved-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.tool-saved{padding:22px;border:1px solid #30485c;border-radius:10px;background:#112131}
+.tool-saved h4{font-size:19px;margin:0 0 5px}.tool-saved p{font-size:12px;line-height:1.7}.tool-saved small{color:#9aafc2;font-size:11px}
+.tool-saved .saved-weather{display:block;font-size:26px;font-weight:500;margin:23px 0 14px}.tool-saved button{display:block;margin-top:20px;font:inherit;font-size:12px;cursor:pointer}
+.extra-map-controls{padding:13px 22px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;border-bottom:1px solid #25394c}
+.extra-map-controls p{font-size:11px;color:#9aafc2;flex:1;min-width:150px;line-height:1.6}
+#primary-source{font-size:11px;margin:10px 0 20px}
+@media(max-width:900px){.tool-stat-grid,.tool-risk-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.tools-panel{padding:22px}.tool-stat strong{font-size:22px}}
+@media(max-width:540px){.tools-panel{padding:16px}.tools-heading h2{font-size:24px}.tools-nav{gap:7px}.tools-nav button{padding:10px 12px;font-size:12px}.tools-controls{gap:15px}.tools-controls>div{flex-basis:100%}.tools-controls label{flex:1}.tools-controls select{width:100%;min-width:100px}.tool-summary{padding:18px}.tool-summary h4{font-size:20px}.tool-stat{padding:14px}.tool-stat strong{font-size:19px}.tool-window-grid{grid-template-columns:1fr}.tool-window-grid .tool-stat{display:grid;grid-template-columns:1fr 1fr;align-items:center}.tool-window-grid strong{margin:0;text-align:right}.extra-map-controls{padding:14px}.extra-map-controls p{flex-basis:100%;margin:0}.tool-saved-grid{grid-template-columns:1fr}}
