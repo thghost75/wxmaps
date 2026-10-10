@@ -121,10 +121,12 @@ export function createHourlyPanel() {
     $('hourly-content').hidden = !hours.length;
     $('hourly-variable').disabled = !hours.length;
     if (!hours.length) {
+      if (source === 'aethra' && !state.data) $('hourly-source-note').textContent =
+        'Aethra forecast · Available hourly coverage varies. The daily map continues to use ECMWF.';
       $('hourly-metrics').replaceChildren(); $('hourly-chart').replaceChildren(); $('hourly-table-body').replaceChildren(); $('hourly-reading').textContent = '—';
       $('hourly-status').textContent = state.status === 'error'
         ? (source === 'aethra' ? 'Aethra is temporarily unavailable. Choose ECMWF above or retry later.' : 'Hourly forecast unavailable. Old readings have been cleared; retry below.')
-        : state.status === 'ready' ? 'No hourly readings are available for this day.' : 'Loading hourly forecast…';
+        : state.status === 'ready' ? (source === 'aethra' ? 'Aethra has no hourly coverage for this day. Choose an earlier day or ECMWF above.' : 'No hourly readings are available for this day.') : 'Loading hourly forecast…';
       return;
     }
     $('hourly-status').textContent = (source === 'aethra' ? 'Aethra · Retrieved ' : 'ECMWF · Retrieved ') + hourLabel(+state.loadedAt / 1000) + ' · Bucharest time';
