@@ -75,8 +75,8 @@ class ForecastTests(unittest.TestCase):
                 patch.object(aethra, 'request_json', return_value=fixture()) as upstream:
             status, data, headers = aethra.forecast_response('GET', PATH)
             self.assertEqual(status, 200)
-            upstream.assert_called_once_with('https://aethra.dev/api/b2b/v1/forecast',
-                {'lat': LAT, 'lon': LON, 'hours': 168}, {'X-API-Key': 'test-only-secret'}, 8)
+            upstream.assert_called_once_with('https://api.aethra.dev/v1/forecast?lat=44.43&lon=26.10',
+                None, {'Authorization': 'Bearer test-only-secret'}, 8)
             self.assertEqual(storage.call_args.args[0][-1], 10800)
             self.assertNotIn('test-only-secret', json.dumps(data))
             self.assertEqual(headers['Cache-Control'], 'no-store')

@@ -3,9 +3,11 @@ import json
 import math
 import os
 import time
+import logging
 from datetime import datetime, timezone
 from http.client import HTTPException
 from urllib.parse import parse_qs, urlsplit
+from urllib.error import HTTPError
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 from wxmaps.visit_counter import credentials
 
@@ -44,8 +46,10 @@ class NoRedirect(HTTPRedirectHandler):
         raise ValueError('Redirect refused')
 
 def request_json(url, payload, headers, timeout):
-    request = Request(url, data=json.dumps(payload).encode(), headers={
-        'Content-Type': 'application/json', **headers}, method='POST')
+    request = Request(url, data=None if payload is None else json.dumps(payload).encode(), headers={
+        'Content-Type': 'application/json', 'Accept': 'application/json',
+        'User-Agent': 'WxMaps/1.0 (+https://wxmaps-iota.vercel.app)', **headers},
+        method='GET' if payload is None else 'POST')
     with build_opener(NoRedirect).open(request, timeout=timeout) as response:
         body = response.read(262145)
     if len(body) > 262144:
@@ -98,6 +102,15 @@ def normalize(raw, lat, lon, now):
     return {'source': 'aethra', 'timezone': 'Europe/Bucharest', 'generated_at': generated,
             'expires_at': now + TTL, 'hourly': hourly, 'hourly_units': units}
 
+def schema(value, depth=0):
+    if depth > 3:
+        return type(value).__name__
+    if isinstance(value, dict):
+        return {str(key)[:60]: schema(item, depth + 1) for key, item in list(value.items())[:35]}
+    if isinstance(value, list):
+        return {'length': len(value), 'first': schema(value[0], depth + 1) if value else None}
+    return type(value).__name__
+
 def forecast_response(method, path):
     headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'}
     if method != 'GET':
@@ -133,11 +146,17 @@ def forecast_response(method, path):
         if result[0] != 'miss':
             raise ValueError('Unexpected storage response')
         try:
-            raw = request_json('https://aethra.dev/api/b2b/v1/forecast',
-                               {'lat': lat, 'lon': lon, 'hours': 168},
-                               {'X-API-Key': os.environ['AETHRA_API_KEY']}, 8)
-            data = normalize(raw, lat, lon, now)
-        except (OSError, HTTPException, ValueError, KeyError, TypeError, OverflowError):
+            raw = request_json(f'https://api.aethra.dev/v1/forecast?lat={lat:.2f}&lon={lon:.2f}',
+                               None, {'Authorization': 'Bearer ' + os.environ['AETHRA_API_KEY']}, 8)
+            # Log structure only when integration validation fails; never values or credentials.
+            try:
+                data = normalize(raw, lat, lon, now)
+            except (ValueError, KeyError, TypeError, OverflowError):
+                logging.warning('Aethra schema: %s', schema(raw))
+                raise
+        except (OSError, HTTPException, ValueError, KeyError, TypeError, OverflowError) as exc:
+            logging.warning('Aethra provider unavailable: %s status=%s',
+                            type(exc).__name__, exc.code if isinstance(exc, HTTPError) else 'validation')
             redis(['EVAL', PUBLISH, 2, key, key + ':lock', json.dumps(unavailable), 120])
             return 503, unavailable, {**headers, 'Retry-After': '120'}
         redis(['EVAL', PUBLISH, 2, key, key + ':lock', json.dumps(data), TTL])
