@@ -93,3 +93,15 @@ Use **Exclude this browser** to exclude future page loads on this origin. The ex
 Redis stores only the aggregate total and its start date. The counter does not save IP addresses, user agents or individual visitor records. The host's normal request logs are separate. Credentials stay in server environment variables and are never returned by the endpoint.
 
 Adapted from the user's [Romanian Climate Explorer frontend](https://github.com/thghost75/Romanian-Climate-Explorer/blob/main/frontend/src/VisitCounter.tsx), [Python counter](https://github.com/thghost75/Romanian-Climate-Explorer/blob/main/anm_climate/visit_counter.py), and [API integration](https://github.com/thghost75/Romanian-Climate-Explorer/blob/main/api/index.py). WxMaps retains its existing plain JavaScript frontend rather than adding React for one footer component.
+
+## Hourly forecast explorer
+
+The panel beneath the map follows the selected overview, searched or saved location and the selected forecast day. Switch its chart between temperature, precipitation, new snowfall, wind speed, cloud cover, humidity and sea-level pressure. Select an hour with the slider, arrow buttons or table rows. Eight reading cards include wind direction, labelled as where the wind comes from.
+
+A separate Open-Meteo request loads seven days of hourly ECMWF IFS 0.25° data for only the selected coordinates. The current location's response stays in memory for at most three hours or until the Bucharest date changes. Changing location clears old readings, aborts the previous request and ignores late responses. Refresh data refreshes both panels. Failed hourly requests clear the hourly readings and retry after five minutes while the page is visible, or immediately with Retry hourly forecast. Daily forecasts can continue working if the hourly request fails.
+
+Unix timestamps are formatted in Europe/Bucharest, independently of the visitor's timezone. Days with 23 or 25 hours retain their actual entries, and UTC offsets distinguish repeated local hours. Missing readings remain dashes and create gaps in line charts. No historical data or API credentials are stored.
+
+Hourly values are interpolated by Open-Meteo from the model's coarser time steps. They are forecasts, not observations. Precipitation and snowfall values cover the preceding hour. Snowfall is estimated new snowfall, not settled snow depth. Pressure is mean sea-level pressure.
+
+Aethra is not connected and no Aethra key or subscription is required. The map's existing geographic projection and daily layers are unchanged.
