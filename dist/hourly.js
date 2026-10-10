@@ -1,5 +1,5 @@
 import {bucharestDate} from './forecast-freshness.js';
-import {hourlyFields, createHourlyLoader, dayHours, hourLabel, offsetLabel, windDirection} from './hourly-data.js';
+import {sourceFields, createHourlyLoader, dayHours, hourLabel, offsetLabel, windDirection} from './hourly-data.js';
 
 const $ = id => document.getElementById(id);
 const format = (value, digits = 0) => Number.isFinite(value) ? value.toFixed(digits) : '—';
@@ -13,10 +13,23 @@ const svg = (tag, attrs, text) => {
 
 export function createHourlyPanel() {
   let place, date, hours = [], selectedHour = 0, field = 'temperature_2m', selectionKey = '';
+  let source = 'ecmwf', hourlyFields = sourceFields(source);
   const loader = createHourlyLoader({onChange: render});
-  for (const [key, meta] of Object.entries(hourlyFields)) {
-    const option = node('option', meta.label); option.value = key; $('hourly-variable').append(option);
+  function configureSource() {
+    hourlyFields = sourceFields(source);
+    if (!hourlyFields[field]) field = 'temperature_2m';
+    $('hourly-variable').replaceChildren(...Object.entries(hourlyFields).map(([key, meta]) => {
+      const option = node('option', meta.label); option.value = key; return option;
+    }));
+    $('hourly-variable').value = field;
+    $('hourly-table-head').replaceChildren(...['Hour', ...Object.values(hourlyFields).map(meta => meta.label + ' ' + meta.unit), 'Wind from'].map(label => {
+      const th = node('th', label); th.scope = 'col'; return th;
+    }));
+    $('hourly-source-note').textContent = source === 'aethra'
+      ? 'Aethra forecast · Up to seven days ahead from the current hour. Wind is shown in km/h. Pressure is surface pressure, not sea-level pressure. Snowfall is not supplied. The daily map above continues to use ECMWF.'
+      : 'ECMWF IFS 0.25° via Open-Meteo · Hourly values are interpolated from coarser model steps, not observations. Precipitation and new snowfall are totals for the preceding hour; snow is not ground depth. Pressure is adjusted to sea level.';
   }
+  configureSource();
 
   function renderChart() {
     const meta = hourlyFields[field];
@@ -110,11 +123,11 @@ export function createHourlyPanel() {
     if (!hours.length) {
       $('hourly-metrics').replaceChildren(); $('hourly-chart').replaceChildren(); $('hourly-table-body').replaceChildren(); $('hourly-reading').textContent = '—';
       $('hourly-status').textContent = state.status === 'error'
-        ? 'Hourly forecast unavailable. Old readings have been cleared; retry below.'
+        ? (source === 'aethra' ? 'Aethra is temporarily unavailable. Choose ECMWF above or retry later.' : 'Hourly forecast unavailable. Old readings have been cleared; retry below.')
         : state.status === 'ready' ? 'No hourly readings are available for this day.' : 'Loading hourly forecast…';
       return;
     }
-    $('hourly-status').textContent = 'Retrieved ' + hourLabel(+state.loadedAt / 1000) + ' · Bucharest time';
+    $('hourly-status').textContent = (source === 'aethra' ? 'Aethra · Retrieved ' : 'ECMWF · Retrieved ') + hourLabel(+state.loadedAt / 1000) + ' · Bucharest time';
     const key = state.key + '|' + date;
     if (selectionKey !== key) {
       const target = date === bucharestDate() ? Date.now() / 1000 : Date.parse(date + 'T09:00:00Z') / 1000;
@@ -126,18 +139,22 @@ export function createHourlyPanel() {
     renderTable(); renderSelection();
   }
 
+  $('hourly-provider').onchange = event => {
+    source = event.target.value; configureSource();
+    if (place) { loader.select(place, {source}); render(); }
+  };
   $('hourly-variable').onchange = event => { field = event.target.value; renderSelection(); };
   $('hourly-slider').oninput = event => { selectedHour = Number(event.target.value); renderSelection(); };
   $('hourly-prev').onclick = () => { selectedHour = Math.max(0, selectedHour - 1); renderSelection(); };
   $('hourly-next').onclick = () => { selectedHour = Math.min(hours.length - 1, selectedHour + 1); renderSelection(); };
-  $('hourly-retry').onclick = () => loader.select(place, {force: true});
+  $('hourly-retry').onclick = () => loader.select(place, {force: true, source});
   return {
     update(nextPlace, nextDate) {
       place = nextPlace; date = nextDate || bucharestDate();
       // Start the new request before rendering, so a different location never shows old data.
-      loader.select(place); render();
+      loader.select(place, {source}); render();
     },
-    refresh() { if (place) loader.select(place, {force: true}); },
-    check() { if (place && document.visibilityState !== 'hidden') { loader.select(place); render(); } },
+    refresh() { if (place) loader.select(place, {force: true, source}); },
+    check() { if (place && document.visibilityState !== 'hidden') { loader.select(place, {source}); render(); } },
   };
 }

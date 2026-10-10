@@ -9,7 +9,28 @@ export const hourlyFields = {
   relative_humidity_2m: {label: 'Humidity', unit: '%', digits: 0, color: '#77d8dc'},
   pressure_msl: {label: 'Sea-level pressure', unit: 'hPa', digits: 0, color: '#eca5b4'},
 };
+export function sourceFields(source = 'ecmwf') {
+  if (source !== 'aethra') return hourlyFields;
+  const {snowfall, pressure_msl, ...common} = hourlyFields;
+  return {...common, surface_pressure: {...pressure_msl, label: 'Surface pressure'}};
+}
 const fields = [...Object.keys(hourlyFields), 'wind_direction_10m'];
+export function validateAethra(data, now = new Date()) {
+  const times = data?.hourly?.time;
+  if (data?.source !== 'aethra' || data.timezone !== 'Europe/Bucharest'
+      || data.hourly_units?.time !== 'unixtime'
+      || !Number.isFinite(data.expires_at) || data.expires_at <= +now / 1000
+      || data.expires_at > +now / 1000 + 10800 + 300
+      || !Number.isFinite(data.generated_at) || data.generated_at > +now / 1000 + 300
+      || data.generated_at < +now / 1000 - 86400
+      || !Array.isArray(times) || times.length < 24 || times.length > 168
+      || !times.every((time, i) => Number.isSafeInteger(time) && (i === 0 || time - times[i - 1] === 3600))
+      || times[0] > +now / 1000 + 7200 || times.at(-1) < +now / 1000) return false;
+  return [...Object.keys(sourceFields('aethra')), 'wind_direction_10m'].every(field =>
+    data.hourly_units[field] === (sourceFields('aethra')[field]?.unit ?? '°')
+    && Array.isArray(data.hourly[field]) && data.hourly[field].length === times.length
+    && data.hourly[field].every(value => value === null || Number.isFinite(value)));
+}
 const hourFormatter = new Intl.DateTimeFormat('en-GB', {timeZone: 'Europe/Bucharest', hour: '2-digit', minute: '2-digit'});
 const offsetFormatter = new Intl.DateTimeFormat('en-GB', {timeZone: 'Europe/Bucharest', timeZoneName: 'shortOffset'});
 export const hourLabel = epoch => hourFormatter.format(new Date(epoch * 1000));
@@ -23,7 +44,7 @@ export function hourlyFresh(loadedAt, data, now = new Date()) {
   const age = +now - +loadedAt;
   return !!loadedAt && !!data && age >= 0 && age < 3 * 3600000
     && bucharestDate(loadedAt) === bucharestDate(now)
-    && hourlyDate(data.hourly.time[0]) === bucharestDate(now);
+    && (data.source === 'aethra' ? validateAethra(data, now) : hourlyDate(data.hourly.time[0]) === bucharestDate(now));
 }
 export function validateHourly(data, now = new Date()) {
   const times = data?.hourly?.time;
@@ -43,8 +64,8 @@ export function validateHourly(data, now = new Date()) {
 export function createHourlyLoader({fetcher = fetch, now = () => new Date(), onChange = () => {}} = {}) {
   const state = {key: '', data: null, loadedAt: null, attemptedAt: null, status: 'idle'};
   let controller, version = 0, pending;
-  async function select(place, {force = false} = {}) {
-    const key = place.lat + ',' + place.lon;
+  async function select(place, {force = false, source = 'ecmwf'} = {}) {
+    const key = (source === 'aethra' ? 'aethra:' : '') + place.lat + ',' + place.lon;
     if (!force && key === state.key && state.status === 'loading') return pending;
     if (!force && key === state.key && hourlyFresh(state.loadedAt, state.data, now())) return;
     const age = +now() - +state.attemptedAt;
@@ -56,17 +77,20 @@ export function createHourlyLoader({fetcher = fetch, now = () => new Date(), onC
     Object.assign(state, {key, data: null, loadedAt: null, attemptedAt: now(), status: 'loading'});
     onChange(state);
     pending = (async () => {
-      const timeout = setTimeout(() => active.abort(), 15000);
+      const timeout = setTimeout(() => active.abort(), source === 'aethra' ? 25000 : 15000);
       try {
         const params = new URLSearchParams({latitude: place.lat, longitude: place.lon,
           models: 'ecmwf_ifs025', hourly: fields.join(','), timezone: 'Europe/Bucharest',
           timeformat: 'unixtime', forecast_days: '7', wind_speed_unit: 'kmh'});
-        const response = await fetcher('https://api.open-meteo.com/v1/forecast?' + params,
+        const url = source === 'aethra'
+          ? '/api/forecast?' + new URLSearchParams({lat: place.lat, lon: place.lon})
+          : 'https://api.open-meteo.com/v1/forecast?' + params;
+        const response = await fetcher(url,
           {signal: active.signal, cache: 'no-store'});
         if (!response.ok) throw new Error('Hourly forecast unavailable');
         const data = await response.json();
         if (requestVersion !== version) return;
-        if (!validateHourly(data, now())) throw new Error('Invalid or outdated hourly forecast');
+        if (!(source === 'aethra' ? validateAethra(data, now()) : validateHourly(data, now()))) throw new Error('Invalid or outdated hourly forecast');
         Object.assign(state, {data, loadedAt: now(), status: 'ready'});
       } catch {
         if (requestVersion !== version) return;

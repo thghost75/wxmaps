@@ -7,6 +7,10 @@
     "api/visits.py": {
       "maxDuration": 10,
       "excludeFiles": "{dist/**,tests/**,scripts/**,.github/**}"
+    },
+    "api/forecast.py": {
+      "maxDuration": 25,
+      "excludeFiles": "{dist/**,tests/**,scripts/**,.github/**}"
     }
   }
 }

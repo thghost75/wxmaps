@@ -36,7 +36,7 @@ The counter uses only the Python standard library. Tests use fake credentials an
 
 Vercel serves **dist/** and the **api/visits.py** function, with its helper in **wxmaps/**. Upstash holds the durable total across deployments. The local preview server does not serve the Python endpoint.
 
-Saved locations and the counter exclusion preference belong to each browser and origin; they do not move from localhost to the public site. Daily forecast refresh runs in visitors' browsers. No weather history is bundled or stored on the hosting server.
+Saved locations and the counter exclusion preference belong to each browser and origin; they do not move from localhost to the public site. Daily forecast refresh runs in visitors' browsers. No weather history is bundled; optional Aethra responses have a short-lived shared cache.
 
 ## Features
 - Geographic map with twelve selectable Romanian cities
@@ -104,4 +104,14 @@ Unix timestamps are formatted in Europe/Bucharest, independently of the visitor'
 
 Hourly values are interpolated by Open-Meteo from the model's coarser time steps. They are forecasts, not observations. Precipitation and snowfall values cover the preceding hour. Snowfall is estimated new snowfall, not settled snow depth. Pressure is mean sea-level pressure.
 
-Aethra is not connected and no Aethra key or subscription is required. The map's existing geographic projection and daily layers are unchanged.
+## Optional Aethra hourly source
+
+Select Aethra in the hourly panel to request the current location through the server-only /api/forecast endpoint. ECMWF remains the default and continues to supply the daily map and snow forecasts. Aethra does not supply snowfall; its pressure is surface pressure and is never presented as sea-level pressure. The chart, cards and table all change their variables and labels with the source.
+
+Configure AETHRA_API_KEY as a Secret in the Vercel Production environment. The key is never sent to the browser or stored in the repository. The endpoint also needs the existing Upstash REST credentials and VERCEL_ENV=production. Preview and the static local server cannot serve Aethra forecasts.
+
+The server accepts only coordinates within the Romania bounding box, rounded to 0.01°. It requests 168 hours using the documented POST endpoint. UTC timestamps and units are validated, wind converts from m/s to km/h, and missing values stay null. Responses with inconsistent locations, stale generation times (over 24 hours), invalid readings or missing variables are rejected. No sample forecasts are shown.
+
+Shared Redis entries under wxmaps:aethra:v1 expire after three hours. Errors expire after two minutes. An atomic cache lookup, lock and budget reservation limits upstream calls to 20 per minute and 250 per UTC day across all visitors (at most 7,750 over 31 days). Failed requests also consume the budget; no upstream retries are made. This reserves headroom below the advertised 10,000 monthly allowance for this dedicated key; other account usage still counts toward the provider quota. Requests fail closed when storage is unavailable. No visitor identifiers are stored by this feature.
+
+Switching source or location clears previous readings and ignores late responses. Browser freshness respects the server cache expiry, so a cached response cannot extend its lifetime. Errors explicitly offer ECMWF rather than quietly mixing models. Use the existing JavaScript and Python test commands to verify the integration. Documentation: https://docs.aethra.dev/api/.
