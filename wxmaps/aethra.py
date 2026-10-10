@@ -103,7 +103,7 @@ def normalize(raw, lat, lon, now):
             'expires_at': now + TTL, 'hourly': hourly, 'hourly_units': units}
 
 def schema(value, depth=0):
-    if depth > 3:
+    if depth > 7:
         return type(value).__name__
     if isinstance(value, dict):
         return {str(key)[:60]: schema(item, depth + 1) for key, item in list(value.items())[:35]}
@@ -153,6 +153,11 @@ def forecast_response(method, path):
                 data = normalize(raw, lat, lon, now)
             except (ValueError, KeyError, TypeError, OverflowError):
                 logging.warning('Aethra schema: %s', schema(raw))
+                sample = raw.get('data', {}).get('daily', [{}])[0].get('hourly', [{}])[0]
+                logging.warning('Aethra hourly sample: %s', {
+                    k: v for k, v in sample.items()
+                    if number(v, -100000, 100000) or (k in ('time', 'date') and isinstance(v, str) and len(v) < 40)})
+                logging.warning('Aethra response time: %s', raw.get('timestamp', '')[:40])
                 raise
         except (OSError, HTTPException, ValueError, KeyError, TypeError, OverflowError) as exc:
             logging.warning('Aethra provider unavailable: %s status=%s',
