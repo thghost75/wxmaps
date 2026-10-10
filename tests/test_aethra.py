@@ -13,19 +13,23 @@ PATH = '/api/forecast?lat=44.4268&lon=26.1025'
 
 def fixture():
     stamp = lambda seconds: datetime.fromtimestamp(seconds, timezone.utc).isoformat()
-    return {'location': {'lat': LAT, 'lon': LON}, 'generated_at': stamp(NOW),
-            'forecast': [{'time': stamp(NOW + i * 3600), 'temperature_c': 12.5,
-                          'humidity_pct': 60, 'wind_speed_ms': 5,
-                          'wind_direction_deg': 270, 'pressure_hpa': 930,
-                          'precipitation_mm': 0, 'cloud_cover_pct': 20} for i in range(168)]}
+    hours = [{'time': stamp(NOW + i * 3600), 'temperature': 12.5,
+              'humidity': 60, 'wind_speed': 5, 'wind_direction': 270,
+              'pressure': 1013, 'precipitation': 0, 'cloud_cover': 20,
+              'feels_like': 11, 'wind_gusts': 8, 'precipitation_probability': 30,
+              'uv_index': 2, 'freezing_level_m': 2300} for i in range(168)]
+    return {'success': True, 'timestamp': stamp(NOW),
+            'data': {'geo': {'latitude': LAT, 'longitude': LON, 'name_en': 'Bucharest'},
+                     'daily': [{'hourly': hours[i:i+24]} for i in range(0,168,24)]}}
 
 class ForecastTests(unittest.TestCase):
     def test_units_pressure_missing_values(self):
         raw = fixture()
-        raw['forecast'][1]['temperature_c'] = None
+        raw['data']['daily'][0]['hourly'][1]['temperature'] = None
         data = aethra.normalize(raw, LAT, LON, NOW)
         self.assertEqual(data['hourly']['wind_speed_10m'][0], 18)
-        self.assertEqual(data['hourly']['surface_pressure'][0], 930)
+        self.assertEqual(data['hourly']['wind_gusts'][0], 28.8)
+        self.assertEqual(data['hourly']['precipitation_probability'][0], 30)
         self.assertNotIn('pressure_msl', data['hourly'])
         self.assertNotIn('snowfall', data['hourly'])
         self.assertIsNone(data['hourly']['temperature_2m'][1])
@@ -33,14 +37,14 @@ class ForecastTests(unittest.TestCase):
 
     def test_rejects_wrong_location_stale_time_gaps_and_bad_values(self):
         changes = [
-            lambda d: d['location'].update(lat=40),
-            lambda d: d.update(generated_at='2000-01-01T00:00:00Z'),
-            lambda d: d['forecast'][1].update(time=d['forecast'][0]['time']),
-            lambda d: d['forecast'][0].update(wind_speed_ms=-1),
-            lambda d: d['forecast'][0].update(humidity_pct=True),
-            lambda d: d['forecast'][0].update(temperature_c=float('nan')),
-            lambda d: d['forecast'][0].update(time='2026-10-10T12:00:00'),
-            lambda d: [row.pop('pressure_hpa') for row in d['forecast']],
+            lambda d: d['data']['geo'].update(latitude=40),
+            lambda d: d.update(timestamp='2000-01-01T00:00:00Z'),
+            lambda d: d['data']['daily'][0]['hourly'][1].update(time=d['data']['daily'][0]['hourly'][0]['time']),
+            lambda d: d['data']['daily'][0]['hourly'][0].update(wind_speed=-1),
+            lambda d: d['data']['daily'][0]['hourly'][0].update(humidity=True),
+            lambda d: d['data']['daily'][0]['hourly'][0].update(temperature=float('nan')),
+            lambda d: d['data']['daily'][0]['hourly'][0].update(time='2026-10-10T12:00:00'),
+            lambda d: [row.pop('humidity') for day in d['data']['daily'] for row in day['hourly']],
         ]
         for change in changes:
             with self.subTest(change=change):
@@ -48,6 +52,15 @@ class ForecastTests(unittest.TestCase):
                 change(raw)
                 with self.assertRaises(ValueError):
                     aethra.normalize(raw, LAT, LON, NOW)
+
+    def test_accepts_local_offsets_and_limits_to_contiguous_hourly_coverage(self):
+        raw = fixture()
+        first = raw['data']['daily'][0]['hourly'][0]
+        from datetime import timedelta
+        first['time'] = datetime.fromtimestamp(NOW, timezone(timedelta(hours=3))).isoformat()
+        self.assertEqual(aethra.normalize(raw, LAT, LON, NOW)['hourly']['time'][0], NOW)
+        raw['data']['daily'][2]['hourly'] = raw['data']['daily'][2]['hourly'][2:]
+        self.assertEqual(len(aethra.normalize(raw, LAT, LON, NOW)['hourly']['time']), 48)
 
     def test_invalid_requests_never_access_services(self):
         with patch.object(aethra, 'redis') as storage, patch.object(aethra, 'request_json') as upstream:

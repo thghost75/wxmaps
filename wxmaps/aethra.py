@@ -32,13 +32,17 @@ redis.call('DEL', KEYS[2])
 return 1
 """
 FIELDS = {
-    'temperature_2m': ('temperature_c', '°C', -100, 65, 1),
-    'precipitation': ('precipitation_mm', 'mm', 0, 1000, 1),
-    'wind_speed_10m': ('wind_speed_ms', 'km/h', 0, 150, 3.6),
-    'cloud_cover': ('cloud_cover_pct', '%', 0, 100, 1),
-    'relative_humidity_2m': ('humidity_pct', '%', 0, 100, 1),
-    'surface_pressure': ('pressure_hpa', 'hPa', 100, 1100, 1),
-    'wind_direction_10m': ('wind_direction_deg', '°', 0, 360, 1),
+    'temperature_2m': ('temperature', '°C', -100, 65, 1),
+    'precipitation': ('precipitation', 'mm', 0, 1000, 1),
+    'wind_speed_10m': ('wind_speed', 'km/h', 0, 150, 3.6),
+    'cloud_cover': ('cloud_cover', '%', 0, 100, 1),
+    'relative_humidity_2m': ('humidity', '%', 0, 100, 1),
+    'apparent_temperature': ('feels_like', '°C', -120, 80, 1),
+    'wind_gusts': ('wind_gusts', 'km/h', 0, 200, 3.6),
+    'precipitation_probability': ('precipitation_probability', '%', 0, 100, 1),
+    'uv_index': ('uv_index', 'index', 0, 30, 1),
+    'freezing_level': ('freezing_level_m', 'm', 0, 10000, 1),
+    'wind_direction_10m': ('wind_direction', '°', 0, 360, 1),
 }
 
 class NoRedirect(HTTPRedirectHandler):
@@ -67,28 +71,54 @@ def epoch(value):
     if not isinstance(value, str):
         raise ValueError('Invalid timestamp')
     parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
-    if parsed.utcoffset() is None or parsed.utcoffset().total_seconds() != 0:
-        raise ValueError('Expected UTC')
+    if parsed.utcoffset() is None:
+        raise ValueError('Expected timezone-aware timestamp')
     return parsed.timestamp()
 
 def number(value, low, high):
     return type(value) in (int, float) and math.isfinite(value) and low <= value <= high
 
 def normalize(raw, lat, lon, now):
-    location = raw['location']
-    if (not number(location['lat'], -90, 90) or not number(location['lon'], -180, 180)
-            or abs(location['lat'] - lat) > .011 or abs(location['lon'] - lon) > .011):
-        raise ValueError('Wrong location')
-    generated = epoch(raw['generated_at'])
-    if not -300 <= now - generated <= 86400:
-        raise ValueError('Outdated forecast')
-    rows = raw['forecast']
-    if not isinstance(rows, list) or not 24 <= len(rows) <= 168:
-        raise ValueError('Invalid forecast length')
-    times = [epoch(row['time']) for row in rows]
-    if (not all(t.is_integer() and (i == 0 or t - times[i - 1] == 3600) for i, t in enumerate(times))
-            or not now - 86400 <= times[0] <= now + 7200 or times[-1] < now):
-        raise ValueError('Invalid forecast times')
+    if raw.get('success') is not True:
+        raise ValueError('Provider did not return a forecast')
+    data = raw['data']
+    geo = data['geo']
+    point_lat, point_lon = geo['latitude'], geo['longitude']
+    if not number(point_lat, 43.5, 48.4) or not number(point_lon, 20, 30):
+        raise ValueError('Wrong region')
+    distance = math.hypot((point_lat - lat) * 111.2,
+                          (point_lon - lon) * 111.2 * math.cos(math.radians(lat)))
+    if distance > 25:
+        raise ValueError('Forecast point too far from selected place')
+    issued = epoch(raw['timestamp'])
+    if not -300 <= now - issued <= TTL:
+        raise ValueError('Outdated response')
+    days = data['daily']
+    if not isinstance(days, list) or not 1 <= len(days) <= 31:
+        raise ValueError('Invalid forecast days')
+    rows = []
+    for day in days:
+        hours = day.get('hourly', [])
+        if not isinstance(hours, list) or len(hours) > 48:
+            raise ValueError('Invalid hourly records')
+        rows.extend(hours)
+    # Use only the continuous hourly horizon; do not invent hours from later coarse steps.
+    ordered = sorted((epoch(row['time']), i, row) for i, row in enumerate(rows))
+    ordered = [entry for entry in ordered if entry[0] >= now - 3600]
+    continuous = []
+    for stamp, _, row in ordered:
+        if continuous and stamp - continuous[-1][0] != 3600:
+            if stamp <= continuous[-1][0]:
+                raise ValueError('Duplicate forecast hour')
+            break
+        continuous.append((stamp, row))
+        if len(continuous) == 168:
+            break
+    times = [stamp for stamp, _ in continuous]
+    rows = [row for _, row in continuous]
+    if (len(rows) < 24 or not all(t.is_integer() for t in times)
+            or times[0] > now + 7200):
+        raise ValueError('Insufficient current hourly coverage')
     hourly = {'time': [int(t) for t in times]}
     units = {'time': 'unixtime'}
     for target, (source, unit, low, high, factor) in FIELDS.items():
@@ -99,17 +129,10 @@ def normalize(raw, lat, lon, now):
             raise ValueError('Missing variable')
         hourly[target] = [None if value is None else round(value * factor, 4) for value in values]
         units[target] = unit
-    return {'source': 'aethra', 'timezone': 'Europe/Bucharest', 'generated_at': generated,
+    return {'source': 'aethra', 'timezone': 'Europe/Bucharest', 'generated_at': issued,
+            'location': {'lat': point_lat, 'lon': point_lon,
+                         'name': str(geo.get('name_en') or geo.get('name') or 'Nearby forecast point')[:120]},
             'expires_at': now + TTL, 'hourly': hourly, 'hourly_units': units}
-
-def schema(value, depth=0):
-    if depth > 7:
-        return type(value).__name__
-    if isinstance(value, dict):
-        return {str(key)[:60]: schema(item, depth + 1) for key, item in list(value.items())[:35]}
-    if isinstance(value, list):
-        return {'length': len(value), 'first': schema(value[0], depth + 1) if value else None}
-    return type(value).__name__
 
 def forecast_response(method, path):
     headers = {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'}
@@ -148,17 +171,7 @@ def forecast_response(method, path):
         try:
             raw = request_json(f'https://api.aethra.dev/v1/forecast?lat={lat:.2f}&lon={lon:.2f}',
                                None, {'Authorization': 'Bearer ' + os.environ['AETHRA_API_KEY']}, 8)
-            # Log structure only when integration validation fails; never values or credentials.
-            try:
-                data = normalize(raw, lat, lon, now)
-            except (ValueError, KeyError, TypeError, OverflowError):
-                logging.warning('Aethra schema: %s', schema(raw))
-                sample = raw.get('data', {}).get('daily', [{}])[0].get('hourly', [{}])[0]
-                logging.warning('Aethra hourly sample: %s', {
-                    k: v for k, v in sample.items()
-                    if number(v, -100000, 100000) or (k in ('time', 'date') and isinstance(v, str) and len(v) < 40)})
-                logging.warning('Aethra response time: %s', raw.get('timestamp', '')[:40])
-                raise
+            data = normalize(raw, lat, lon, now)
         except (OSError, HTTPException, ValueError, KeyError, TypeError, OverflowError) as exc:
             logging.warning('Aethra provider unavailable: %s status=%s',
                             type(exc).__name__, exc.code if isinstance(exc, HTTPError) else 'validation')

@@ -12,9 +12,11 @@ function fixture() {
   }
   return data;
 }
-test('Aethra has surface pressure and no fabricated snow or sea-level pressure',()=>{
+test('Aethra has additional live variables without ambiguous pressure or fabricated snow',()=>{
   const fields=sourceFields('aethra');
-  assert.equal(fields.surface_pressure.label,'Surface pressure');
+  assert.equal(fields.apparent_temperature.label,'Feels like');
+  assert.equal(fields.precipitation_probability.unit,'%');
+  assert.equal(fields.surface_pressure,undefined);
   assert.equal(fields.snowfall,undefined); assert.equal(fields.pressure_msl,undefined);
   assert.equal(validateAethra(fixture(),now),true);
 });

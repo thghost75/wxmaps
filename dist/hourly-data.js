@@ -12,7 +12,13 @@ export const hourlyFields = {
 export function sourceFields(source = 'ecmwf') {
   if (source !== 'aethra') return hourlyFields;
   const {snowfall, pressure_msl, ...common} = hourlyFields;
-  return {...common, surface_pressure: {...pressure_msl, label: 'Surface pressure'}};
+  return {...common,
+    apparent_temperature: {label: 'Feels like', unit: '°C', digits: 1, color: '#f0c478'},
+    wind_gusts: {label: 'Wind gusts', unit: 'km/h', digits: 0, color: '#eca5b4'},
+    precipitation_probability: {label: 'Chance of precipitation', unit: '%', digits: 0, color: '#75c9f4'},
+    uv_index: {label: 'UV index', unit: 'index', digits: 1, color: '#f0c478'},
+    freezing_level: {label: 'Freezing level', unit: 'm', digits: 0, color: '#c0acf4'},
+  };
 }
 const fields = [...Object.keys(hourlyFields), 'wind_direction_10m'];
 export function validateAethra(data, now = new Date()) {

@@ -128,6 +128,14 @@ export function createHourlyPanel() {
       return;
     }
     $('hourly-status').textContent = (source === 'aethra' ? 'Aethra · Retrieved ' : 'ECMWF · Retrieved ') + hourLabel(+state.loadedAt / 1000) + ' · Bucharest time';
+    if (source === 'aethra') {
+      const point = state.data.location;
+      const end = state.data.hourly.time.at(-1);
+      const coverage = new Intl.DateTimeFormat('en-GB', {timeZone: 'Europe/Bucharest', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}).format(new Date(end * 1000));
+      $('hourly-source-note').textContent = 'Aethra · Forecast point: ' + (point?.name || place.name)
+        + (point ? ' (' + point.lat.toFixed(2) + '° N, ' + point.lon.toFixed(2) + '° E)' : '')
+        + ' · Hourly coverage through ' + coverage + ' Bucharest time. Wind and gusts: km/h. Freezing level: height above sea level. Model forecasts, not observations. The daily map continues to use ECMWF.';
+    }
     const key = state.key + '|' + date;
     if (selectionKey !== key) {
       const target = date === bucharestDate() ? Date.now() / 1000 : Date.parse(date + 'T09:00:00Z') / 1000;
